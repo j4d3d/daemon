@@ -1,13 +1,16 @@
 import sys, time, keyboard
-from termcolor import colored
+from termcolor import colored as col
 
 from browser import Browser
-import apis.flex_jobs
+import apis.upwork
 
 browser = Browser()
-browser.start(False)
-# apis.flex_jobs.log_in(browser)
-apis.flex_jobs.search(browser, "Game Programmer")
+browser.start('chrome', headless=False)
 
-# time.sleep(5)
-keyboard.wait('ctrl+left')
+apis.upwork.log_in(browser)
+# keyboard.wait('ctrl+right')
+browser.wait_for_element("//div[@class='avatar-with-progress']")
+
+apis.upwork.search(browser, "Javascript")
+
+browser.quit()
