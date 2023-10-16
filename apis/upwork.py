@@ -21,10 +21,11 @@ URL_HOME = 'https://www.upwork.com/'
 URL_LOGIN = 'https://www.upwork.com/ab/account-security/login'
 URL_SEARCH = 'https://www.upwork.com/nx/jobs/search/?'
 
-db = TinyDB(f"data/{NAME}.json")
+db = TinyDB(f"data/{NAME}.json", indent=4)
 Job = Query()
 
-def log_in(browser):
+def log_in(daemon):
+    browser = daemon.browser
     log(col("Logging In...", "magenta"))
 
     with open('config/auth.json') as f:
@@ -44,13 +45,14 @@ def log_in(browser):
     browser.wait_for_element("//div[@class='avatar-with-progress']")
     log(col(f'Logged into {NAME} successfully', 'cyan'))
 
-def search(browser, query, max_page=999999):
+def search(daemon, query, max_page=999999):
+    browser = daemon.browser
     log(col(f"Searching {NAME} for \"{query}\"...", "magenta"))
 
     quit = False
 
     page = 1
-    while (not quit) and (max_page == -1 or page <= max_page):
+    while not quit:
 
         params = {
             'q': query,
@@ -73,7 +75,9 @@ def search(browser, query, max_page=999999):
             data = {}
 
             # get id
-            e = browser.wait_for_child_of(cell, ".//a[contains(@class, 'up-n-link')]")
+            e = browser.wait_for_child_of(cell, ".//a")
+            if e is None: continue
+
             data['title'] = e.text.strip()
             href = e.get_attribute('href')
             data['id'] = re.match(r".+~(.+)/", href)[1]
@@ -83,81 +87,143 @@ def search(browser, query, max_page=999999):
             result = db.search(Job['id'] == data['id'])
             if result: continue
 
-            cell.click()
-            content = browser.wait_for_element("//div[contains(@data-test, 'job-details-viewer')]")
+            # click the 'More' button
+            if False:
+                e = browser.wait_for_child_of(cell, ".//button[contains(text, 'More')]")
+                if e:
+                    log(f"Found button: {e.text}")
+                    e.click()
+                else: log("No button found")
+                browser.wait_for_element(".//div[contains(data-test, 'job-description-text')]")
+
+            parse_cell(cell, data)
+
+
+            # cell.click()
+            # content = browser.wait_for_element("//div[contains(@data-test, 'job-details-viewer')]")
+            # parse_content(content, data)
+
             # time.sleep(1)
 
             # now use soup to parse side panel
-            soup = BeautifulSoup(content.get_attribute("innerHTML"), 'html.parser')
-            
-            souples = [
-                    ['posted', 'data-test', 'up-c-relative-time', r"(.*)"],
-                    ['description', 'data-test', 'description', r"(.*)"],
-                    ['connects', 'data-test', 'connects-auction', r"(\d+) Connects"],
-                    ['clientPostings', 'data-qa', 'client-job-posting-stats', r"(\d+)\s*jobs?\s*posted"],
-                    ['clientSpend', 'data-qa', 'client-spend', r"\$([^\s]+)"],
-                    ['clientHourlyRate', 'data-qa', 'client-hourly-rate', r"\$([^\s]+)"],
-                    ['clientHours', 'data-qa', 'client-hours', r"([^\s]+)\s*hours?"],
-                    ['clientHires', 'data-test', 'client-hires', r"(.*)"],
-                    ['currency', 'data-test', 'job-currency-render', r"\$([^\s]+)"],
-                    ['expertise', 'data-test', 'expertise', None],
-            ]
-
-            float_fields = ['clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
-
-            for souple in souples:
-                se = soup.find(attrs={souple[1]: souple[2]})
-                if se is not None: 
-                    if souple[3] is not None:
-                        field = re.search(souple[3], se.text, re.DOTALL)[1]
-                        if souple[0] in float_fields: field = float(field.replace(',', ''))
-                        data[souple[0]] = field
-                    else: data[souple[0]] = str(se)
-                    # log(f"{souple} -> {data[souple[0]]}")
-            
-            # special parsing for some fields
-            if 'posted' in data:
-                time = datetime.datetime.now().timestamp()
-                # log(f"Parsing {data['posted']} at time: {time} {datetime.datetime.utcnow()}")
-                mat = re.search(r"(?:Posted\s+)?(\w+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", data['posted'])
-                quant = float(mat[1])
-                if mat[2] == 'second': time -= quant
-                elif mat[2] == 'minute': time -= 60 * quant
-                elif mat[2] == 'hour': time -= 3600 * quant
-                elif mat[2] == 'day': time -= 3600 * 24 * quant
-                elif mat[2] == 'week': time -= 3600 * 24 * 7 
-                elif mat[2] == 'year': time -= 3600 * 24 * 365.25 * quant
-                data['posted'] = int(time)
-            if 'expertise' in data:
-                data['expertise'] = [li.text.strip() for li in BeautifulSoup(data['expertise'], 'html.parser').find_all('li')]
-            if 'clientSpend' in data:
-                text = data['clientSpend']
-                log(f"parsing spend: {text}")
-                mat = re.search(r"^([^\s]+?)(K|M|B)?$", text.strip())
-                text = mat[1]
-                mult = 1
-                if mat[2] == 'K': mult = 1000
-                elif mat[2] == 'M': mult = 1000000
-                elif mat[2] == 'B': mult = 1000000000
-                data['clientSpend'] = float(text) * mult
-                log(data['clientSpend'])
-            
-            log(col(json.dumps(data, indent=2), "green"))
 
             if helper.wait_for_arrow():
                 db.insert(data)
-                browser.driver.back()
             else:
                 quit = True
                 break
         if quit: break
 
+        page += 1
+        if (max_page != -1 and page > max_page):
+            break
+
         # next page if available
         btn_next = browser.find_element("//button[normalize-space(.)='Next']")
         if btn_next is None or btn_next.get_attribute('disabled') is not None: 
             break
-        page += 1
         log(col(f"Search for '{query}' advancing to page {page}...", "magenta"))
-        # btn_next.click()
+        btn_next.click()
         
     return new_jobs
+
+def parse_cell(cell, data):
+    data['source'] = 'condensed'
+    soup = BeautifulSoup(cell.get_attribute("innerHTML"), 'html.parser')
+
+    souples = [
+            ['jobType', 'data-test', 'job-type', "(.*)"],
+            ['budget', 'data-test', 'budget', "(.*)"],
+            ['duration', 'data-test', 'duration', "(.*)"],
+            ['posted', 'data-test', 'UpCRelativeTime', "(.*)"],
+            ['description', 'data-test', 'job-description-text', "(.*)"],
+            ['clientVerification', 'data-test', 'payment-verification-status', "(.*)"],
+            ['clientSpend', 'data-test', 'client-spendings', "(.*)"],
+            ['clientCountry', 'data-test', 'client-country', "(.*)"],
+            ['skills', 'class', 'up-skill-wrapper', None],
+    ]
+
+    float_fields = []#'clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
+
+    for souple in souples:
+        se = soup.find(attrs={souple[1]: souple[2]})
+        if se is not None: 
+            if souple[3] is not None:
+                field = re.search(souple[3], se.text, re.DOTALL)[1].strip()
+                if souple[0] in float_fields: field = float(field.replace(',', ''))
+                data[souple[0]] = field
+            else: data[souple[0]] = str(se)
+    
+    parse_data(data)
+    # skills = []
+    # e = soup.find(attrs={'class': 'up-skill-wrapper'})
+    # for a in e.find_all('a'):
+    #     skills.append(a.text.strip())
+    # data['skills'] = skills
+
+    # data['raw'] = cell.get_attribute("innerHTML")
+
+def parse_content(content, data):
+    data['source'] = 'expanded'
+    soup = BeautifulSoup(content.get_attribute("innerHTML"), 'html.parser')
+    
+    souples = [
+            ['posted', 'data-test', 'up-c-relative-time', r"(.*)"],
+            ['description', 'data-test', 'description', r"(.*)"],
+            ['connects', 'data-test', 'connects-auction', r"(\d+) Connects"],
+            ['clientPostings', 'data-qa', 'client-job-posting-stats', r"(\d+)\s*jobs?\s*posted"],
+            ['clientSpend', 'data-qa', 'client-spend', r"\$([^\s]+)"],
+            ['clientHourlyRate', 'data-qa', 'client-hourly-rate', r"\$([^\s]+)"],
+            ['clientHours', 'data-qa', 'client-hours', r"([^\s]+)\s*hours?"],
+            ['clientHires', 'data-test', 'client-hires', r"(.*)"],
+            ['currency', 'data-test', 'job-currency-render', r"\$([^\s]+)"],
+            ['expertise', 'data-test', 'expertise', None],
+    ]
+
+    float_fields = ['clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
+
+    for souple in souples:
+        se = soup.find(attrs={souple[1]: souple[2]})
+        if se is not None: 
+            if souple[3] is not None:
+                field = re.search(souple[3], se.text, re.DOTALL)[1]
+                if souple[0] in float_fields: field = float(field.replace(',', ''))
+                data[souple[0]] = field
+            else: data[souple[0]] = str(se)
+            # log(f"{souple} -> {data[souple[0]]}")
+    
+    # special parsing for some fields
+    parse_data(data)
+    
+def parse_data(data):
+    if 'posted' in data:
+        time = datetime.datetime.now().timestamp()
+        # log(f"Parsing {data['posted']} at time: {time} {datetime.datetime.utcnow()}")
+        mat = re.search(r"(?:Posted\s+)?(\w+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", data['posted'])
+        quant = float(mat[1])
+        if mat[2] == 'second': time -= quant
+        elif mat[2] == 'minute': time -= 60 * quant
+        elif mat[2] == 'hour': time -= 3600 * quant
+        elif mat[2] == 'day': time -= 3600 * 24 * quant
+        elif mat[2] == 'week': time -= 3600 * 24 * 7 
+        elif mat[2] == 'year': time -= 3600 * 24 * 365.25 * quant
+        data['posted'] = int(time)
+    if 'expertise' in data:
+        data['expertise'] = [e.text.strip() for e in BeautifulSoup(data['expertise'], 'html.parser').find_all('li')]
+        # data['skills'] = data['expertise']
+        # del data['expertise']
+    if 'skills' in data:
+        data['skills'] = [e.text.strip() for e in BeautifulSoup(data['skills'], 'html.parser').find_all('a')]
+    if 'clientSpend' in data:
+        text = data['clientSpend']
+        log(f"parsing spend: {text}")
+        mat = re.search(r"^([^\s]+?)(K|M|B)?$", text.strip())
+        text = mat[1]
+        mult = 1
+        if mat[2] == 'K': mult = 1000
+        elif mat[2] == 'M': mult = 1000000
+        elif mat[2] == 'B': mult = 1000000000
+        data['clientSpend'] = float(text) * mult
+        log(data['clientSpend'])
+    
+    log(col(json.dumps(data, indent=2), "green"))

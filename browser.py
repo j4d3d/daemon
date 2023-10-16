@@ -93,12 +93,15 @@ class Browser():
         logger.setLevel(logging.WARNING)
 
         self.driver.set_window_size(1620, 1080)
+
+        log('Web Driver started.')
     
     def quit(self):
         log(col("Exiting browser... ", "red") + col(' '+str(self.driver), "grey"))
         self.driver.quit()
 
     def get(self, url):
+        log(f"Browser getting: {url}")
         self.driver.get(url)
         time.sleep(1)
     
@@ -128,7 +131,12 @@ class Browser():
         time.sleep(.333)
 
     def find_element(self, xpath):
-        return self.driver.find_element(By.XPATH, xpath)
+        try:
+            e = self.driver.find_element(By.XPATH, xpath)
+            return e
+        except Exception as ex:
+            # log(f"Element not found: {xpath}")
+            return None
 
     def find_elements(self, xpath):
         return self.driver.find_elements(By.XPATH, xpath)

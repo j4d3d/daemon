@@ -85,7 +85,9 @@ def log_exception(ex):
     log(col('\nException:', 'white'))
     # log(sys.exc_info()[2])
     # log(traceback.format_exc())
-    log(exception_lines[-1])
+    log(col(exception_lines[-1].strip(), 'magenta'))
+    log(lines_code[-1].strip())
+    log(lines_stack[-1].strip())
     
     log('')
     for i in range(0, 4): caution_line()

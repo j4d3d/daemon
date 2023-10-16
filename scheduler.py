@@ -13,7 +13,7 @@ class Scheduler():
     def __init__(self, daemon):
         self.daemon = daemon
         self.stop = False
-        self.queue_search = ['Gpt']
+        self.queue_search = ['c']
 
     def start(self):
         now = dt.now()
@@ -27,12 +27,13 @@ class Scheduler():
             self.run_searches()
 
         update()
-        delay = goal_time.timestamp() - dt.now().timestamp()
-        log('delay: {delay}')
-        time.sleep(delay)
-        while (True):
-            update()
-            time.sleep(INTERVAL_UPDATE)
+        if False:
+            delay = goal_time.timestamp() - dt.now().timestamp()
+            log(f'delay: {delay}')
+            time.sleep(delay)
+            while (True):
+                update()
+                time.sleep(3600)
 
         # self.thread = threading.Thread(target=update)
         # self.thread.start()
@@ -43,4 +44,4 @@ class Scheduler():
 
     def run_searches(self):
         for search in self.queue_search:
-            apis.upwork.search(self.daemon.browser, search, max_page=1)
+            apis.upwork.search(self.daemon, search, max_page=1)
