@@ -6,6 +6,8 @@ import traceback
 import urllib.parse as urlparse
 import helper
 
+from util.logger import log
+
 from bs4 import BeautifulSoup
 
 from selenium.webdriver.common.by import By
@@ -23,7 +25,7 @@ db = TinyDB(f"data/{NAME}.json")
 Job = Query()
 
 def log_in(browser):
-    print(col("Logging In...", "magenta"))
+    log(col("Logging In...", "magenta"))
 
     with open('config/auth.json') as f:
         auth = json.load(f)
@@ -39,15 +41,16 @@ def log_in(browser):
     e = browser.wait_for_element("//button[@id='login_control_continue']")
     e.send_keys(Keys.RETURN)
     browser.wait_for_stale(e)
-    print(col(f'Logged into {NAME} successfully', 'cyan'))
+    browser.wait_for_element("//div[@class='avatar-with-progress']")
+    log(col(f'Logged into {NAME} successfully', 'cyan'))
 
-def search(browser, query):
-    print(col(f"Searching {NAME} for \"{query}\"...", "magenta"))
+def search(browser, query, max_page=999999):
+    log(col(f"Searching {NAME} for \"{query}\"...", "magenta"))
 
     quit = False
 
     page = 1
-    while not quit:
+    while (not quit) and (max_page == -1 or page <= max_page):
 
         params = {
             'q': query,
@@ -74,7 +77,7 @@ def search(browser, query):
             data['title'] = e.text.strip()
             href = e.get_attribute('href')
             data['id'] = re.match(r".+~(.+)/", href)[1]
-            print(col(f"Job Id: {data['id']}", 'cyan'))
+            log(col(f"Job Id: {data['id']}", 'cyan'))
 
             # do we already have this job?
             result = db.search(Job['id'] == data['id'])
@@ -110,12 +113,12 @@ def search(browser, query):
                         if souple[0] in float_fields: field = float(field.replace(',', ''))
                         data[souple[0]] = field
                     else: data[souple[0]] = str(se)
-                    # print(f"{souple} -> {data[souple[0]]}")
+                    # log(f"{souple} -> {data[souple[0]]}")
             
             # special parsing for some fields
             if 'posted' in data:
                 time = datetime.datetime.now().timestamp()
-                # print(f"Parsing {data['posted']} at time: {time} {datetime.datetime.utcnow()}")
+                # log(f"Parsing {data['posted']} at time: {time} {datetime.datetime.utcnow()}")
                 mat = re.search(r"(?:Posted\s+)?(\w+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", data['posted'])
                 quant = float(mat[1])
                 if mat[2] == 'second': time -= quant
@@ -129,7 +132,7 @@ def search(browser, query):
                 data['expertise'] = [li.text.strip() for li in BeautifulSoup(data['expertise'], 'html.parser').find_all('li')]
             if 'clientSpend' in data:
                 text = data['clientSpend']
-                print(f"parsing spend: {text}")
+                log(f"parsing spend: {text}")
                 mat = re.search(r"^([^\s]+?)(K|M|B)?$", text.strip())
                 text = mat[1]
                 mult = 1
@@ -137,9 +140,9 @@ def search(browser, query):
                 elif mat[2] == 'M': mult = 1000000
                 elif mat[2] == 'B': mult = 1000000000
                 data['clientSpend'] = float(text) * mult
-                print(data['clientSpend'])
+                log(data['clientSpend'])
             
-            print(col(json.dumps(data, indent=2), "green"))
+            log(col(json.dumps(data, indent=2), "green"))
 
             if helper.wait_for_arrow():
                 db.insert(data)
@@ -154,7 +157,7 @@ def search(browser, query):
         if btn_next is None or btn_next.get_attribute('disabled') is not None: 
             break
         page += 1
-        print(col(f"Search for '{query}' advancing to page {page}...", "magenta"))
+        log(col(f"Search for '{query}' advancing to page {page}...", "magenta"))
         # btn_next.click()
         
     return new_jobs

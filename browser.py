@@ -23,6 +23,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException, NoSuchWindowException, TimeoutException
 from selenium.webdriver.support.expected_conditions import staleness_of
 
+from util.logger import log
+
 class Browser():
     def __init__(self):
         pass
@@ -40,7 +42,7 @@ class Browser():
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3')
         options.page_load_strategy = 'normal' # none, eager, normal
-        print('Opening webdriver')
+        log('Opening webdriver')
         self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
         self.driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=options)
         self.driver = webdriver.Edge(service=Service(EdgeChromiumDriverManager().install()), options=options)
@@ -53,6 +55,8 @@ class Browser():
         self.driver.set_window_size(1620, 1080) 
 
     def start(self, type='chrome', headless=True):
+        log(col(f"Starting {type} browser, headless={headless}", "cyan"))
+
         def set_options(options):
             # options.add_argument("--window-size=1620x1080")
             # options.add_argument('--headless')
@@ -79,7 +83,7 @@ class Browser():
             set_options(options)
             self.driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=options)
         else:
-            print("Driver type is not supported.")
+            log("Driver type is not supported.")
             self.driver = None
 
         self.driver.set_page_load_timeout(10)
@@ -91,7 +95,7 @@ class Browser():
         self.driver.set_window_size(1620, 1080)
     
     def quit(self):
-        print(col("Exiting browser... ", "red") + col(' '+str(self.driver), "grey"))
+        log(col("Exiting browser... ", "red") + col(' '+str(self.driver), "grey"))
         self.driver.quit()
 
     def get(self, url):
@@ -105,7 +109,7 @@ class Browser():
         finally: 
             found = str(element)
             if (len(found) > 12): found = found[:9] + '...'
-            print(f'Wait done, found: {found}, criteria: ({by}) {query}')
+            log(f'Wait done, found: {found}, criteria: ({by}) {query}')
             return element
         
     def wait_for_child_of(self, parent, query, by=By.XPATH, wait=10):
@@ -115,7 +119,7 @@ class Browser():
         finally: 
             found = str(element)
             if (len(found) > 12): found = found[:9] + '...'
-            print(f'Wait done, found: {found}, criteria: ({by}) {query}')
+            log(f'Wait done, found: {found}, criteria: ({by}) {query}')
             return element
     
     def wait_for_stale(self, element, timeout=30):
