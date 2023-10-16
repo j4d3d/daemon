@@ -2,8 +2,7 @@ import time
 import logging
 
 from urllib import parse
-from termcolor import colored
-
+from termcolor import colored as col
 
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
@@ -45,8 +44,8 @@ class Browser():
         self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
         self.driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=options)
         self.driver = webdriver.Edge(service=Service(EdgeChromiumDriverManager().install()), options=options)
-        self.driver.set_page_load_timeout(10)
-        self.driver.set_script_timeout(10)
+        self.driver.set_page_load_timeout(30)
+        self.driver.set_script_timeout(30)
 
         logger = logging.getLogger('selenium.webdriver.remote.remote_connection')
         logger.setLevel(logging.WARNING)
@@ -65,7 +64,7 @@ class Browser():
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
             options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3')
-            options.page_load_strategy = 'normal' # none, eager, normal
+            options.page_load_strategy = 'none' # none, eager, normal
 
         if type == 'chrome':
             options = ChromeOptions()
@@ -92,10 +91,12 @@ class Browser():
         self.driver.set_window_size(1620, 1080)
     
     def quit(self):
+        print(col("Exiting browser... ", "red") + col(' '+str(self.driver), "grey"))
         self.driver.quit()
 
     def get(self, url):
         self.driver.get(url)
+        time.sleep(1)
     
     def wait_for_element(self, query, by=By.XPATH, wait=10):
         element = None
@@ -121,6 +122,9 @@ class Browser():
         yield
         WebDriverWait(self.driver, timeout).until( staleness_of(element) )
         time.sleep(.333)
+
+    def find_element(self, xpath):
+        return self.driver.find_element(By.XPATH, xpath)
 
     def find_elements(self, xpath):
         return self.driver.find_elements(By.XPATH, xpath)

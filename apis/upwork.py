@@ -1,9 +1,10 @@
 import re
 import json
-import time
+import time, datetime
 import keyboard
 import traceback
 import urllib.parse as urlparse
+import helper
 
 from bs4 import BeautifulSoup
 
@@ -43,116 +44,117 @@ def log_in(browser):
 def search(browser, query):
     print(col(f"Searching {NAME} for \"{query}\"...", "magenta"))
 
-    params = {
-        'q': query,
-        'user_location_match': 2,
-        'sort': 'recency'
-    }
-    url = URL_SEARCH + urlparse.urlencode(params)
-    browser.get(url)
+    quit = False
 
-    # wait for sections to load
-    e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]/section")
+    page = 1
+    while not quit:
 
-    e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]")
-    job_cells = e.find_elements(By.XPATH, ".//section")
+        params = {
+            'q': query,
+            'user_location_match': 2,
+            'sort': 'recency',
+        }
+        if page > 1: params['page'] = page
+        url = URL_SEARCH + urlparse.urlencode(params)
+        browser.get(url)
 
-    new_jobs = []
+        # wait for sections to load
+        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]/section")
 
-    for cell in job_cells:
-        data = {}
+        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]")
+        job_cells = e.find_elements(By.XPATH, ".//section")
 
-        # get id
-        e = browser.wait_for_child_of(cell, ".//a[contains(@class, 'up-n-link')]")
-        href = e.get_attribute('href')
-        print(href)
-        data['id'] = re.match(r".+~(.+)/", href)[1]
-        print('id: '+data['id'])
+        new_jobs = []
 
-        # do we already have this job?
-        result = db.search(Job['id'] == data['id'])
-        if result: continue
+        for cell in job_cells:
+            data = {}
 
-        cell.click()
-        content = browser.wait_for_element("//div[contains(@data-test, 'job-details-viewer')]")
-        # time.sleep(1)
+            # get id
+            e = browser.wait_for_child_of(cell, ".//a[contains(@class, 'up-n-link')]")
+            data['title'] = e.text.strip()
+            href = e.get_attribute('href')
+            data['id'] = re.match(r".+~(.+)/", href)[1]
+            print(col(f"Job Id: {data['id']}", 'cyan'))
 
-        data['id'] = re.match('.+~(.+?)\?', browser.driver.current_url)[1]
-        print(col(f"Job Id: {data['id']}", 'cyan'))
+            # do we already have this job?
+            result = db.search(Job['id'] == data['id'])
+            if result: continue
 
-        # parse this job and add to DB
-        try:
-            if False:
-                e = browser.find_child_of(content, ".//header[contains(@class, 'up-card-header d-flex')]")
-                if e is not None:
-                    data['title'] = e.text
+            cell.click()
+            content = browser.wait_for_element("//div[contains(@data-test, 'job-details-viewer')]")
+            # time.sleep(1)
 
-                e = browser.find_child_of(content, ".//span[contains(@data-test, 'up-c-relative-time')]")
-                if e is not None:
-                    data['posted'] = e.text
+            # now use soup to parse side panel
+            soup = BeautifulSoup(content.get_attribute("innerHTML"), 'html.parser')
+            
+            souples = [
+                    ['posted', 'data-test', 'up-c-relative-time', r"(.*)"],
+                    ['description', 'data-test', 'description', r"(.*)"],
+                    ['connects', 'data-test', 'connects-auction', r"(\d+) Connects"],
+                    ['clientPostings', 'data-qa', 'client-job-posting-stats', r"(\d+)\s*jobs?\s*posted"],
+                    ['clientSpend', 'data-qa', 'client-spend', r"\$([^\s]+)"],
+                    ['clientHourlyRate', 'data-qa', 'client-hourly-rate', r"\$([^\s]+)"],
+                    ['clientHours', 'data-qa', 'client-hours', r"([^\s]+)\s*hours?"],
+                    ['clientHires', 'data-test', 'client-hires', r"(.*)"],
+                    ['currency', 'data-test', 'job-currency-render', r"\$([^\s]+)"],
+                    ['expertise', 'data-test', 'expertise', None],
+            ]
 
-                # e = browser.wait_for_child_of(content, ".//div[contains(@class, 'cfe-ui-job-breadcrumbs')]")
-                # data['breadcrumbs'] = e.text
+            float_fields = ['clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
 
-                e = browser.find_child_of(content, ".//div[contains(@data-test, 'job-currency-render')]")
-                if e is not None:
-                    data['budget'] = e.text
+            for souple in souples:
+                se = soup.find(attrs={souple[1]: souple[2]})
+                if se is not None: 
+                    if souple[3] is not None:
+                        field = re.search(souple[3], se.text, re.DOTALL)[1]
+                        if souple[0] in float_fields: field = float(field.replace(',', ''))
+                        data[souple[0]] = field
+                    else: data[souple[0]] = str(se)
+                    # print(f"{souple} -> {data[souple[0]]}")
+            
+            # special parsing for some fields
+            if 'posted' in data:
+                time = datetime.datetime.now().timestamp()
+                # print(f"Parsing {data['posted']} at time: {time} {datetime.datetime.utcnow()}")
+                mat = re.search(r"(?:Posted\s+)?(\w+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", data['posted'])
+                quant = float(mat[1])
+                if mat[2] == 'second': time -= quant
+                elif mat[2] == 'minute': time -= 60 * quant
+                elif mat[2] == 'hour': time -= 3600 * quant
+                elif mat[2] == 'day': time -= 3600 * 24 * quant
+                elif mat[2] == 'week': time -= 3600 * 24 * 7 
+                elif mat[2] == 'year': time -= 3600 * 24 * 365.25 * quant
+                data['posted'] = int(time)
+            if 'expertise' in data:
+                data['expertise'] = [li.text.strip() for li in BeautifulSoup(data['expertise'], 'html.parser').find_all('li')]
+            if 'clientSpend' in data:
+                text = data['clientSpend']
+                print(f"parsing spend: {text}")
+                mat = re.search(r"^([^\s]+?)(K|M|B)?$", text.strip())
+                text = mat[1]
+                mult = 1
+                if mat[2] == 'K': mult = 1000
+                elif mat[2] == 'M': mult = 1000000
+                elif mat[2] == 'B': mult = 1000000000
+                data['clientSpend'] = float(text) * mult
+                print(data['clientSpend'])
+            
+            print(col(json.dumps(data, indent=2), "green"))
 
-                e = browser.find_child_of(content, ".//div[contains(@data-test, 'description')]")
-                if e is not None:
-                    data['description'] = e.text
+            if helper.wait_for_arrow():
+                db.insert(data)
+                browser.driver.back()
+            else:
+                quit = True
+                break
+        if quit: break
 
-                e = browser.find_child_of(content, "//aside/*[contains(@data-test, 'connects-auction')]")
-                if e is not None:
-                    print(e.text)
-                    data['connects'] = re.match("Send a proposal for:\s+(\d+) Connects", e.text)[1]
-                else: print(col(content.get_attribute('innerHTML'), 'red'))
-
-                e = browser.find_child_of(content, "//aside/*[contains(@data-test, 'client-spend')]")
-                if e is not None:
-                    mat = re.match("$(.+?) total spent", e.text)
-                    data['clientSpent'] = mat[1]
-
-                e = browser.find_child_of(content, "//aside/*[contains(@data-test, 'client-job-posting-stats')]")
-                if e is not None:
-                    mat = re.match("(.+?) jobs posted", e.text)
-                    data['clientPostCount'] = mat[1]
-                
-                e = browser.find_child_of(content, "//aside/*[contains(@data-test, 'client-hires')]")
-                if e is not None:
-                    mat = re.match("(\d+) hires(?:, (\d+) active)", e.text)
-                    data['clientHires'] = mat[1]
-                    data['clientActive'] = mat[2]
-        except Exception as ex:
-            traceback.print_exception(type(ex), ex, ex.__traceback__)
-            # print(col(content.get_attribute('innerHTML'), 'red'))
-
-
-        # now use soup to parse side panel
-        soup = BeautifulSoup(content.get_attribute("innerHTML"), 'html.parser')
-        
-        souples = [['description', 'data-test', 'description', r"(.*)"],
-                   ['connects', 'data-test', 'connects-auction', r"(\d+) Connects"],
-                   ['clientPostings', 'data-qa', 'client-job-posting-stats', r"(\d+)\s*jobs?\s*posted"],
-                   ['clientSpend', 'data-qa', 'client-spend', r"\$([^\s]+)"],
-                   ['clientHourlyRate', 'data-qa', 'client-hourly-rate', r"\$([^\s]+)"],
-                   ['clientHours', 'data-qa', 'client-hours', r"([^\s]+)\s*hours?"],
-                   ['clientHires', 'data-test', 'client-hires', r"(.*)"],
-                   ['currency', 'data-test', 'job-currency-render', r"\$([^\s]+)"]
-        ]
-                   
-        for souple in souples:
-            se = soup.find(attrs={souple[1]: souple[2]})
-            if se is not None: 
-                text = se.text.replace('\n', ' ')
-                print(f"{souple} -> {text}")
-                data[souple[0]] = re.search(souple[3], text, re.DOTALL)[1]
-
-
-        print(col(json.dumps(data, indent=2), "green"))
-
-        keyboard.wait('ctrl+down')
-        db.insert(data)
-        browser.driver.back()
+        # next page if available
+        btn_next = browser.find_element("//button[normalize-space(.)='Next']")
+        if btn_next is None or btn_next.get_attribute('disabled') is not None: 
+            break
+        page += 1
+        print(col(f"Search for '{query}' advancing to page {page}...", "magenta"))
+        # btn_next.click()
         
     return new_jobs
