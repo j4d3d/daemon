@@ -16,7 +16,7 @@ class Daemon:
     def start(self):
         self.browser = Browser()
         self.browser.start('chrome', headless=False)
-        # apis.upwork.log_in(self.browser)
+        apis.upwork.log_in(self)
 
         self.scheduler = Scheduler(self)
         self.scheduler.start()

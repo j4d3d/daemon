@@ -26,7 +26,7 @@ class Logger:
         self.file = None
         self.filename = f"logs/log_{key}_{math.floor(datetime.now().timestamp())}.txt"
         if not CLOSE_AFTER_WRITE:
-            self.file = open(self.filename, 'w')
+            self.file = open(self.filename, 'w', encoding='utf-8')
     
     def log(self, text):
         text = str(text)
@@ -38,7 +38,7 @@ class Logger:
 
         stripped = strip_ansi_escape_sequences(text) + "\n"
         if CLOSE_AFTER_WRITE:
-            self.file = open(self.filename, "a")
+            self.file = open(self.filename, "a", encoding='utf-8')
             self.file.write(stripped)
             self.file.close()
         else: 

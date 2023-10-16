@@ -1,9 +1,8 @@
 import os
 
-if True:
+if False:
     print('Deleting DB')
-    try:
-        os.remove('data/Upwork.json')
+    try: os.remove('data/Upwork.json')
     except OSError:
         pass
 

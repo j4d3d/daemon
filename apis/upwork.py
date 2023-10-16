@@ -54,6 +54,10 @@ def search(daemon, query, max_page=999999):
     page = 1
     while not quit:
 
+        if page > 1:
+            log('zzz')
+            time.sleep(7)
+
         params = {
             'q': query,
             'user_location_match': 2,
@@ -67,6 +71,10 @@ def search(daemon, query, max_page=999999):
         e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]/section")
 
         e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]")
+        if e is None: 
+            log("job-tile-list never loaded.")
+            break
+
         job_cells = e.find_elements(By.XPATH, ".//section")
 
         new_jobs = []
@@ -98,7 +106,6 @@ def search(daemon, query, max_page=999999):
 
             parse_cell(cell, data)
 
-
             # cell.click()
             # content = browser.wait_for_element("//div[contains(@data-test, 'job-details-viewer')]")
             # parse_content(content, data)
@@ -117,6 +124,7 @@ def search(daemon, query, max_page=999999):
         page += 1
         if (max_page != -1 and page > max_page):
             break
+        time.sleep(1)
 
         # next page if available
         btn_next = browser.find_element("//button[normalize-space(.)='Next']")
@@ -127,13 +135,20 @@ def search(daemon, query, max_page=999999):
         
     return new_jobs
 
+def expand_data(daemon, data):
+    browser = daemon.browser
+    url = "https://www.upwork.com/jobs/~" + data['id']
+    browser.get(url)
+    # todo: finish
+
 def parse_cell(cell, data):
     data['source'] = 'condensed'
     soup = BeautifulSoup(cell.get_attribute("innerHTML"), 'html.parser')
 
     souples = [
             ['jobType', 'data-test', 'job-type', "(.*)"],
-            ['budget', 'data-test', 'budget', "(.*)"],
+            ['hourly', 'data-test', 'job-type', "(.*)"],
+            ['budget', 'data-test', 'budget', ".*\$([^\s]+)"],
             ['duration', 'data-test', 'duration', "(.*)"],
             ['posted', 'data-test', 'UpCRelativeTime', "(.*)"],
             ['description', 'data-test', 'job-description-text', "(.*)"],
@@ -143,14 +158,17 @@ def parse_cell(cell, data):
             ['skills', 'class', 'up-skill-wrapper', None],
     ]
 
-    float_fields = []#'clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
+    float_fields = ['budget']#'clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
 
     for souple in souples:
         se = soup.find(attrs={souple[1]: souple[2]})
         if se is not None: 
             if souple[3] is not None:
-                field = re.search(souple[3], se.text, re.DOTALL)[1].strip()
-                if souple[0] in float_fields: field = float(field.replace(',', ''))
+                field = se.text.replace(',', '').strip()
+                log(field)
+                field = re.search(souple[3], field, re.DOTALL)[1]
+                if len(field) == 0: continue
+                if souple[0] in float_fields: field = float(field)
                 data[souple[0]] = field
             else: data[souple[0]] = str(se)
     
@@ -217,7 +235,7 @@ def parse_data(data):
     if 'clientSpend' in data:
         text = data['clientSpend']
         log(f"parsing spend: {text}")
-        mat = re.search(r"^([^\s]+?)(K|M|B)?$", text.strip())
+        mat = re.search(r"^\$?([^\s]+?)(K|M|B|)", text.strip())
         text = mat[1]
         mult = 1
         if mat[2] == 'K': mult = 1000
@@ -225,5 +243,16 @@ def parse_data(data):
         elif mat[2] == 'B': mult = 1000000000
         data['clientSpend'] = float(text) * mult
         log(data['clientSpend'])
+    if 'hourly' in data:
+        text = data['hourly'].replace(',', '').strip()
+        log('re: '+text)
+        mat = re.search(r"\$([^\-]+)(?:\-\$(.+))?", text)
+        log(f"mat: {mat}")
+        if mat is not None and mat[1] is not None:
+            hourly = float(mat[1])
+            if mat[2] is not None:
+                hourly = (hourly + float(mat[2])) / 2
+            data['hourly'] = hourly
+        else: del data['hourly']
     
     log(col(json.dumps(data, indent=2), "green"))
