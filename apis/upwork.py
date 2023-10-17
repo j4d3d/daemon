@@ -67,17 +67,36 @@ def search(daemon, query, max_page=999999):
         url = URL_SEARCH + urlparse.urlencode(params)
         browser.get(url)
 
-        # wait for sections to load
-        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]/section")
+        job_cells = []
+        new_jobs = []
 
-        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]")
-        if e is None: 
+        if page == 1:
+            # select jobs per page
+            e = browser.wait_for_element("//div[contains(@data-test, 'jobs_per_page')]")
+            if e is not None:
+                e.click()
+                # time.sleep(1)
+                browser.wait_for_element("//div[contains(@data-test, 'jobs_per_page')]//li")
+                items = e.find_elements(By.XPATH, './/li')
+                # time.sleep(1)
+                if (len(items) > 0):
+                    log(f"Clicking to set jobs-per-page to final item")
+                    items[-1].click()
+                    browser.wait_for_stale(e)
+                    log("Success, waiting for new entries")
+                    max_tries = 10
+                    while max_tries > 0:
+                        time.sleep(1)
+                        max_tries -= 1
+                        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]/section")
+                        e = browser.wait_for_element("//div[contains(@data-test, 'job-tile-list')]")
+                        job_cells = e.find_elements(By.XPATH, ".//section")
+                        if (len(job_cells) > 10): break
+                    
+        if len(job_cells) == 0: 
             log("job-tile-list never loaded.")
             break
-
-        job_cells = e.find_elements(By.XPATH, ".//section")
-
-        new_jobs = []
+        log(f"Found {len(job_cells)} job cells")
 
         for cell in job_cells:
             data = {}
@@ -119,6 +138,10 @@ def search(daemon, query, max_page=999999):
             else:
                 quit = True
                 break
+
+            log(f"Found {len(new_jobs)} new jobs.")
+        
+        
         if quit: break
 
         page += 1
@@ -146,40 +169,22 @@ def parse_cell(cell, data):
     soup = BeautifulSoup(cell.get_attribute("innerHTML"), 'html.parser')
 
     souples = [
-            ['jobType', 'data-test', 'job-type', "(.*)"],
-            ['hourly', 'data-test', 'job-type', "(.*)"],
-            ['budget', 'data-test', 'budget', ".*\$([^\s]+)"],
-            ['duration', 'data-test', 'duration', "(.*)"],
-            ['posted', 'data-test', 'UpCRelativeTime', "(.*)"],
-            ['description', 'data-test', 'job-description-text', "(.*)"],
-            ['clientVerification', 'data-test', 'payment-verification-status', "(.*)"],
-            ['clientSpend', 'data-test', 'client-spendings', "(.*)"],
-            ['clientCountry', 'data-test', 'client-country', "(.*)"],
+            ['jobType', 'data-test', 'job-type', r"(.*)"],
+            ['hourly', 'data-test', 'job-type', r"(.*)"],
+            ['budget', 'data-test', 'budget', r".*\$([^\s]+)"],
+            ['duration', 'data-test', 'duration', r"(.*)"],
+            ['posted', 'data-test', 'UpCRelativeTime', r"(.*)"],
+            ['description', 'data-test', 'job-description-text', r"(.*)"],
+            ['clientVerification', 'data-test', 'payment-verification-status', r"(.*)"],
+            ['clientSpend', 'data-test', 'client-spendings', r"\$([^\s]+)"],
+            ['clientCountry', 'data-test', 'client-country', r"(.*)"],
             ['skills', 'class', 'up-skill-wrapper', None],
     ]
 
-    float_fields = ['budget']#'clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
+    float_fields = ['budget']
 
-    for souple in souples:
-        se = soup.find(attrs={souple[1]: souple[2]})
-        if se is not None: 
-            if souple[3] is not None:
-                field = se.text.replace(',', '').strip()
-                log(field)
-                field = re.search(souple[3], field, re.DOTALL)[1]
-                if len(field) == 0: continue
-                if souple[0] in float_fields: field = float(field)
-                data[souple[0]] = field
-            else: data[souple[0]] = str(se)
-    
+    parse_souples(data, soup, souples, float_fields)
     parse_data(data)
-    # skills = []
-    # e = soup.find(attrs={'class': 'up-skill-wrapper'})
-    # for a in e.find_all('a'):
-    #     skills.append(a.text.strip())
-    # data['skills'] = skills
-
-    # data['raw'] = cell.get_attribute("innerHTML")
 
 def parse_content(content, data):
     data['source'] = 'expanded'
@@ -200,18 +205,23 @@ def parse_content(content, data):
 
     float_fields = ['clientPostings', 'clientHourlyRate', 'clientHours', 'clientHires', 'currency' ]
 
+    parse_souples(data, soup, souples, float_fields)
+    parse_data(data)
+
+def parse_souples(data, soup, souples, float_fields=[]):
     for souple in souples:
         se = soup.find(attrs={souple[1]: souple[2]})
-        if se is not None: 
-            if souple[3] is not None:
-                field = re.search(souple[3], se.text, re.DOTALL)[1]
-                if souple[0] in float_fields: field = float(field.replace(',', ''))
-                data[souple[0]] = field
-            else: data[souple[0]] = str(se)
-            # log(f"{souple} -> {data[souple[0]]}")
-    
-    # special parsing for some fields
-    parse_data(data)
+        if se is None: continue
+        if souple[3] is None:
+            data[souple[0]] = str(se)
+            continue
+
+        field = se.text.replace(',', '').strip()
+        log('~\n'+field)
+        field = re.search(souple[3], field, re.DOTALL)[1]
+        if field is None or len(field) == 0: continue
+        if souple[0] in float_fields: field = float(field)
+        data[souple[0]] = field
     
 def parse_data(data):
     if 'posted' in data:
@@ -234,8 +244,7 @@ def parse_data(data):
         data['skills'] = [e.text.strip() for e in BeautifulSoup(data['skills'], 'html.parser').find_all('a')]
     if 'clientSpend' in data:
         text = data['clientSpend']
-        log(f"parsing spend: {text}")
-        mat = re.search(r"^\$?([^\s]+?)(K|M|B|)", text.strip())
+        mat = re.search(r"([\d\.]+)(K|M|B|)\+?", text.strip())
         text = mat[1]
         mult = 1
         if mat[2] == 'K': mult = 1000

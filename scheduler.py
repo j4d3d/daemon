@@ -44,5 +44,5 @@ class Scheduler():
 
     def run_searches(self):
         for search in self.queue_search:
-            apis.upwork.search(self.daemon, search, max_page=7)
+            apis.upwork.search(self.daemon, search, max_page=1)
             # break

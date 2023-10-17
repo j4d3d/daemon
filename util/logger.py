@@ -113,6 +113,57 @@ def dispose():
     for key, logger in loggers.items():
         logger.dispose()
 
+def print_head_tail(text, LINE_WIDTH=96, LINE_COUNT=2):
+    printout = ''
+    
+    tail_end = len(text)
+    tail_start = tail_end - LINE_COUNT * LINE_WIDTH
+    
+    head_start = 0
+    head_end = LINE_COUNT * LINE_WIDTH
+    
+    # collapse head/tail ranges to fit text
+    if (head_end > tail_end):
+        head_end = tail_end
+        tail_start = tail_end
+
+    if (tail_start < head_end): 
+        tail_start = head_end
+    
+    head = text[head_start:head_end]
+    tail = text[tail_start:tail_end]
+
+    line = 'description: '
+    for body in [head, tail]:
+        index = 0
+        lines = 0
+        while index < len(body) and lines < LINE_COUNT:
+            append_size = LINE_WIDTH - len(line)
+            ceil = index + append_size
+            ceil = min(ceil, len(body))
+            
+            line += body[index:ceil]
+            printout += '\n' + line
+
+            index += append_size
+            lines += 1
+            line = ''
+        
+        # print 
+        
+        symbol = '~'
+
+        if body == head: 
+            symbol = '.'
+            if len(tail) == 0:  continue
+
+        printout += '\n'
+        for i in range(0, LINE_WIDTH):
+            printout += symbol
+
+    # desc = desc_flat[0:48] + "...." + desc[-48:]
+    log(f"{printout}")
+
 # colors = ["red", "grey", "blue", "magenta"]
 # parts = []
 # pattern = "("
