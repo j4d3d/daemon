@@ -1,9 +1,13 @@
+import time
 import json
 from datetime import datetime as dt
 
 from termcolor import colored as col
 
 import sys
+sys.path.insert(0, '.')
+import helper
+
 sys.path.insert(0, 'util')
 import logger
 from logger import log
@@ -12,11 +16,13 @@ from tinydb import TinyDB, Query
 Job = Query()
 db = TinyDB('data/Upwork.json')
 
-criterion = (Job.budget > 1) | (Job.hourly > 1)
-# criterion = criterion & (Job.clientSpend > 0)
+criterion = (Job.title.exists())
+criterion &= (~Job.hide.exists())
+criterion &= (Job.budget > 1) | (Job.hourly > 1)
+criterion &= (Job.clientSpend > 0)
 
 result = db.search(criterion)
-result = sorted(result, key=lambda x: x['posted'], reverse=False)
+result = sorted(result, key=lambda x: x['posted'], reverse=True)
 
 for job in result:
     # print(json.dumps(job, indent=4))
@@ -50,5 +56,10 @@ for job in result:
     
     logger.print_head_tail(desc_flat)
     # desc = desc_flat[0:48] + "...." + desc[-48:]
+    time.sleep(1)
+    if not helper.wait_for_arrow(importance=1):
+        # swipe left
+        job['hide'] = 1
+        db.update(job, Job.id == job['id'])
 
 log(f'\nSearch yielded {len(result)} results.')

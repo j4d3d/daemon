@@ -13,7 +13,7 @@ class Scheduler():
     def __init__(self, daemon):
         self.daemon = daemon
         self.stop = False
-        self.queue_search = ['game programming']#, 'unity', 'web scraping', 'etl', 'automation']
+        self.queue_search = ['game dev']#, 'unity', 'web scraping', 'etl', 'automation']
 
     def start(self):
         now = dt.now()
@@ -44,5 +44,6 @@ class Scheduler():
 
     def run_searches(self):
         for search in self.queue_search:
-            apis.upwork.search(self.daemon, search, max_page=1)
+            apis.upwork.search(self.daemon, search, max_page=7)
+            # keyboard.wait('ctrl+left')
             # break

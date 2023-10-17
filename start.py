@@ -14,7 +14,6 @@ from termcolor import colored as col
 import util.logger
 from util.logger import log, log_exception
 
-os.system('cls' if os.name == 'nt' else 'clear')
 log("Starting")
 
 from daemon import Daemon

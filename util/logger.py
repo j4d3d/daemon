@@ -1,4 +1,9 @@
-import os, sys
+import os
+def clear():
+    os.system('cls' if os.name == 'nt' else 'clear')
+clear()
+
+import sys
 import re
 import math
 
